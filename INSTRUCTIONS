@@ -71,6 +71,8 @@ operating system and location of the LAPACK and BLAS libraries.
 To use the Makefile as provided, type "make barsN.out" from the linux
 prompt in the barsN directory.
 
+[EDIT: gfortran is needed to compile]
+
 *** End Compilation ***
 
 

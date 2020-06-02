@@ -17,6 +17,6 @@ barsN_funcs.o: barsN_funcs.c barsN_funcs1.h barsN_funcs.h
 	$(CC) -c barsN_funcs.c
 
 barsN.out: barsN.c barsN_funcs.h barsN_funcs.o barsN_utils.o logspline.o ranlibsub.o com.o
-	$(CC) -o barsN.out $(CFLAGS) barsN.c barsN_funcs.o barsN_utils.o logspline.o ranlibsub.o com.o -llapack -lblas -lg2c
+	$(CC) -o barsN.out $(CFLAGS) barsN.c barsN_funcs.o barsN_utils.o logspline.o ranlibsub.o com.o -llapack -lblas -lgfortran -lm -ldl
 
 
