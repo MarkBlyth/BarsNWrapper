@@ -3,7 +3,7 @@ import datetime
 import subprocess
 import os
 
-BARS_EXECUTABLE = "./barsN.out"
+BARS_EXECUTABLE = "./BarsNWrapper/barsN.out"
 
 PARAM_FILE_STRING = """
 SET burn-in_iterations = {0}
