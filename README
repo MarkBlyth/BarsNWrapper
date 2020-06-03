@@ -1,3 +1,20 @@
+This is a python wrapper for BarsN. The original paper can be found at
+
+Wallstrom, Garrick, Jeffrey Liebner, and Robert E. Kass. "An
+implementation of Bayesian adaptive regression splines (BARS) in C
+with S and R wrappers." Journal of Statistical Software 26.1 (2008):
+1.
+
+To use the software, follow the instructions in INSTRUCTIONS, to
+compile a barsN executable. Put this executable in the current working
+directory. The python wrapper will then provide an interface for
+running it.
+
+The original BarsN implementation is redistributed here, as per the
+GNU GPL v2. Original README below.
+
+--------------------------------------------------------------------------
+
 
                         BarsN 1.0. 
 
