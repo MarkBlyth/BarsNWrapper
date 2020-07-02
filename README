@@ -8,7 +8,75 @@ with S and R wrappers." Journal of Statistical Software 26.1 (2008):
 To use the software, follow the instructions in INSTRUCTIONS, to
 compile a barsN executable. Put this executable in the current working
 directory. The python wrapper will then provide an interface for
-running it.
+running it. The python wrapper is referred to as wrapper.py, and
+should be placed in the same directory as the BarsN executable.
+
+The wrapper is used by calling
+
+wrapper.barsN(xs, ys, prior_param, iknots, burnin, sims, tau, c)
+
+    xs: iterable of scalar float-likes. x values of training
+	datapoints.
+
+    xs: iterable of scalar float-likes. y values of training
+	datapoints.
+
+    iknots: int > 0, initial number of knots to use.
+
+    priorparam: float>0, tuple, or list of tuples
+        The parameter for the prior belief on number of knots. The
+        prior type is automatically inferred, and is is one of
+
+            uniform : uniform distribution over the number of knots;
+            poisson : poisson distribution over the number of knots;
+            user : custom distribution over the number of knots.
+
+        The format of the priorparam is used to automatically
+        determine which of these priors to use:
+
+            a) if using Poisson, prior_param is a float lambda
+               (poisson mean);
+            b) if using Uniform, prior_param is a tuple of length 2,
+                which gives the minimum number of knots, followed by
+                the maximum number of knots. Lower and upper limits
+                work the same way as in range(lower,upper).
+            c) if using user-defined prior, prior_param is a list of
+                tuples. The first entry should be the number of knots,
+                and the second column should be the probability of
+                obtaining this number of knots. Note the following
+                example:
+
+                   [
+                    (2, 0.05),
+                    (3, 0.15),
+                    (4, 0.30),
+                    (5, 0.30),
+                    (6, 0.10),
+                    (7, 0.10),
+                   ]
+
+        Default behaviour is a uniform prior with (0,60) knots.
+
+    burnin : int > 0
+        The desired length of the burn-in for the MCMC chain
+
+    sims : int > 0
+        The number of simulations desired for the MCMC chain
+
+    tau : float > 0
+        Parameter that controls the spread for the knot proposal
+        distribution
+
+    c : float > 0
+        Parameter that controls the probability of birth and death
+        candidates
+
+A ModelSet object is returned. To estimate the posterior p(y|x),
+simply call the returned ModelSet on the test data, eg.
+
+    model = barsN(data_x, data_y, priorparam=(20,30))
+    ys = model(xs)
+    	  
 
 The original BarsN implementation is redistributed here, as per the
 GNU GPL v2. Original README below.
