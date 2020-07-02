@@ -2,6 +2,7 @@ import numpy as np
 import datetime
 import subprocess
 import os
+from scipy.interpolate import BSpline
 
 BARS_EXECUTABLE = "./BarsNWrapper/barsN.out"
 
@@ -15,7 +16,7 @@ SET proposal_parameter_tau = {3}
 SET reversible_jump_constant_c = {4}
 SET confidence_level = 0.95
 SET number_of_grid_points = 150
-SET sampled_knots_file = none
+SET sampled_knots_file = {8}
 SET sampled_mu_file = none
 SET sampled_mu-grid_file = none
 SET sampled_params_file = none
@@ -30,21 +31,154 @@ END
 """
 
 
+class ModelConfig:
+    """Class for storing model configurations (number and location of
+    knots, and data upper/lower bounds). Has a method for generating a
+    callable model object from the config, when provided with training
+    data.
+    """
+    def __init__(self, knot_locations, a, b):
+        self.k = len(knot_locations)
+        self.knot_locations = knot_locations
+        self.a = a
+        self.b = b
+
+    def _get_gridpoints(self):
+        ret = np.zeros(self.k + 2)
+        ret[0] = self.a
+        ret[-1] = self.b
+        ret[1:-1] = self.knot_locations
+        return ret
+
+    def _design_matrix(self, x):
+        """Build the design matrix B, such that B_{i,j} = b_j(x_i). x_i is
+        the i'th datapoint, b_j is the j'th spline in the basis.
+
+            x : 1d float-like np array
+                Datapoints to construct design matrix from
+
+        Returns n-by-b design matrix, where b=k-2 is the number of
+        basis splines, and n is the number of datapoints.
+        """
+        basis_gridpoints = self._get_gridpoints()  # Knot points + endpoints
+        n_splines = len(self.knot_locations) - 2
+        n_data = len(x)
+        design_mat = np.zeros((n_data, n_splines))
+
+        for i in range(design_mat.shape[1]):
+            ith_spline = BSpline.basis_element(basis_gridpoints[i : i + 4])
+            ith_col = ith_spline(x).T
+            design_mat[:, i] = ith_col
+        return design_mat
+
+    def fit(self, data_x, data_y):
+        """Take x, y datapoints, and return a callable model object.
+
+            data_x: 1d np array
+                x data to fit the model to
+
+            data_y: 1d np array
+                y data to fit the model to
+
+        Performs no checking! Returns a Model object, that can be
+        called to evaluate the posterior data distribition, given this
+        current knot configuration.
+        """
+        design_matrix = self._design_matrix(data_x)
+        basis_gridpoints = self._get_gridpoints()  # Knot points + endpoints
+        betas = (
+            len(data_x)
+            / (len(data_x) + 1)
+            * np.linalg.lstsq(design_matrix, data_y, rcond=None)[0]
+        )
+        splines = []
+        for i in range(design_matrix.shape[1]):
+            splines.append(BSpline.basis_element(basis_gridpoints[i : i + 4]))
+        return Model(betas, splines)
+
+
+class Model:
+    """Simple callable B-Spline model"""
+
+    def __init__(self, betas, spline_funcs):
+        """To be called by ModelConfig.fit. betas are the BSpline
+        coefficients, and spline_funcs are the BSPline functions."""
+        self.betas = betas
+        self.splines = spline_funcs
+
+    def __call__(self, xs):
+        """Evaluate the posterior distribution p(y | knots, x), at
+        some x datapoints.
+
+            xs: np array
+                1d array of datapoints at which to evaluate the
+                posterior distribution.
+
+        Returns a np array of p(y | knots, x). """
+        return np.dot(self.betas, np.array([b(xs) for b in self.splines]))
+
+
+class ModelSet:
+    """
+    Class for handling collections of fitted spline models. Allows for
+    the easy estimation of p(y | x), by averaging (mean, median) over
+    the sets of samples p(y | knots, x) for each sampled knot set.
+    """
+    def __init__(self, model_list):
+        self.models = model_list
+
+    def posterior_samples(self, xs):
+        """Find posterior p(y | knots, x) for each sampled knot set,
+        for each x value. Each row is an evaluation p(y|x) for a
+        different knot set"""
+        return np.array([m(xs) for m in self.models])
+
+    def posterior_median(self, xs):
+        """Find the median value p(y | x)"""
+        samples = self.posterior_samples(xs)
+        return np.median(samples, axis=0)
+
+    def posterior_mean(self, xs):
+        """Find the mean value p(y | x)"""
+        samples = self.posterior_samples(xs)
+        return np.mean(samples, axis=0)
+
+    def __call__(self, xs):
+        """Find the mean value p(y|x). Takes the mean of p(y|x, knots)
+        over the set of sampled knots.
+            xs: np array
+                1d array of points at which to evaluate the posterior
+
+        Returns posterior mean p(y|x) at each x point.
+        """
+        return self.posterior_mean(xs)
+
+
 def _random_filename(basename):
     suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
     filename = "_".join([basename, suffix])
     return filename
 
 
-def _parse_summary_file(filename):
-    with open(filename, 'r') as infile:
+def _parse_knot_file(filename):
+    with open(filename, "r") as infile:
         lines = infile.readlines()
-    ts = [float(x) for x in lines[0].split()]
-    xs = [float(x) for x in lines[1].split()]
-    return ts, xs
+    knotlist = []
+    for line in lines:
+        knotlist.append(np.array([float(x) for x in line.split()][2:]))
+    return knotlist
 
 
-def barsN(xs, ys, prior_param=(0, 60), iknots=25, burnin=2000, sims=2000, tau=50, c=0.4):
+def _build_model(knotlist, data_x, data_y):
+    a = np.min(data_x)
+    b = np.max(data_x)
+    model_list = [ModelConfig(k, a, b).fit(data_x, data_y) for k in knotlist]
+    return ModelSet(model_list)
+
+
+def barsN(
+    xs, ys, prior_param=(0, 60), iknots=25, burnin=2000, sims=2000, tau=50, c=0.4
+):
     """
     Run a barsN executable on the provided data. This function
     performs no checking, so it is up to the user to ensure everything
@@ -126,23 +260,27 @@ def barsN(xs, ys, prior_param=(0, 60), iknots=25, burnin=2000, sims=2000, tau=50
     if isinstance(prior_param, (float, int)):
         # POISSON
         prior_pars = """SET prior_form = Poisson
-SET Poisson_parameter_lambda = {0}""".format(float(prior_param))
+SET Poisson_parameter_lambda = {0}""".format(
+            float(prior_param)
+        )
 
     elif isinstance(prior_param, (list, tuple, np.ndarray)) and len(prior_param) == 2:
         # UNIFORM
         prior_pars = """SET prior_form = Uniform
 SET Uniform_parameter_L = {0}
-SET Uniform_parameter_U = {1}""".format(prior_param[0]+1, prior_param[1]-1)
+SET Uniform_parameter_U = {1}""".format(
+            prior_param[0] + 1, prior_param[1] - 1
+        )
 
-    elif isinstance(prior_param, (list, tuple, np.ndarray)) and len(prior_param[0]) == 2:
+    elif (
+        isinstance(prior_param, (list, tuple, np.ndarray)) and len(prior_param[0]) == 2
+    ):
         # USER
         prior_pars = "SET prior_form = User"
-        prior_string = "\n".join(["{0} {1}".format(n, p)
-                                  for n, p in prior_param])
+        prior_string = "\n".join(["{0} {1}".format(n, p) for n, p in prior_param])
 
     else:
-        raise ValueError(
-            "Could not infer prior type, check prior_param is correct")
+        raise ValueError("Could not infer prior type, check prior_param is correct")
 
     # Set up a prior file, if necessary
     prior_filename = None
@@ -152,17 +290,26 @@ SET Uniform_parameter_U = {1}""".format(prior_param[0]+1, prior_param[1]-1)
         user_prior_file.write(prior_string)
 
     # Set up a datafile
-    datafile_string = "\n".join(["{0} {1}".format(x, y)
-                                 for x, y in data_tuples])
+    datafile_string = "\n".join(["{0} {1}".format(x, y) for x, y in data_tuples])
     datafile_filename = _random_filename("datafile")
     datafile_file = open(datafile_filename, "w")
     datafile_file.write(datafile_string)
 
     # Set up a parameter file
     sampled_mu_filename = _random_filename("sampled_mu")
+    sampled_knots_filename = _random_filename("sampled_knots")
     gridded_mu_filename = _random_filename("gridded_mu")
     param_file_string = PARAM_FILE_STRING.format(
-        burnin, sims, iknots, tau, c, sampled_mu_filename, gridded_mu_filename, prior_pars)
+        burnin,
+        sims,
+        iknots,
+        tau,
+        c,
+        sampled_mu_filename,
+        gridded_mu_filename,
+        prior_pars,
+        sampled_knots_filename,
+    )
     param_filename = _random_filename("param_file")
     param_file = open(param_filename, "w")
     param_file.write(param_file_string)
@@ -174,22 +321,21 @@ SET Uniform_parameter_U = {1}""".format(prior_param[0]+1, prior_param[1]-1)
     datafile_file.close()
 
     # Invoke BARS executable
-    subproc_args = ' '.join(
-        [BARS_EXECUTABLE, datafile_file.name, param_file.name])
+    subproc_args = " ".join([BARS_EXECUTABLE, datafile_file.name, param_file.name])
     if prior_filename is not None:
         subproc_args.append(prior_filename)
     subprocess.run(subproc_args, shell=True)
 
-    # Parse the output
-    mu_t_grid, mu_x_grid = _parse_summary_file(gridded_mu_filename)
-    mu_t_samp, mu_x_samp = _parse_summary_file(sampled_mu_filename)
+    knotlist = _parse_knot_file(sampled_knots_filename)
+    model = _build_model(knotlist, xs, ys)
 
     # Delete the relevant files
     os.remove(gridded_mu_filename)
+    os.remove(sampled_knots_filename)
     os.remove(sampled_mu_filename)
     os.remove(datafile_filename)
     os.remove(param_filename)
     if prior_filename is not None:
         os.remove(prior_filename)
 
-    return mu_t_samp, mu_x_samp, mu_t_grid, mu_x_grid
+    return model
