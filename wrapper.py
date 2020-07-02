@@ -228,7 +228,7 @@ def barsN(
         Default behaviour is a uniform prior with (0,60) knots.
 
 
-    burnin : int > 0
+burnin : int > 0
         The desired length of the burn-in for the MCMC chain (default
             = 200)
 
@@ -244,13 +244,8 @@ def barsN(
         Parameter that controls the probability of birth and death
         candidates (default = 0.4)
 
-    Returns four lists:
-        1. mu_t_samp : training t points
-        2. mu_x_samp : latent process mean, evaluated at the training
-           t points
-        3. mu_t_grid : t points along a uniform grid
-        4. mu_x_grid : latent process mean, evaluated at that uniform
-           grid
+    Returns a ModelSet object. Posterior p(y|x) can then be estimated
+    by calling ModelSet(xs).
     """
     # Assume xs,ys are already lists of floats, of equal length
     data_tuples = list(zip(xs, ys))
