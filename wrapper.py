@@ -38,38 +38,10 @@ class ModelConfig:
     data.
     """
     def __init__(self, knot_locations, a, b):
-        self.k = len(knot_locations)
-        self.knot_locations = knot_locations
-        self.a = a
-        self.b = b
-
-    def _get_gridpoints(self):
-        ret = np.zeros(self.k + 2)
-        ret[0] = self.a
-        ret[-1] = self.b
-        ret[1:-1] = self.knot_locations
-        return ret
-
-    def _design_matrix(self, x):
-        """Build the design matrix B, such that B_{i,j} = b_j(x_i). x_i is
-        the i'th datapoint, b_j is the j'th spline in the basis.
-
-            x : 1d float-like np array
-                Datapoints to construct design matrix from
-
-        Returns n-by-b design matrix, where b=k-2 is the number of
-        basis splines, and n is the number of datapoints.
-        """
-        basis_gridpoints = self._get_gridpoints()  # Knot points + endpoints
-        n_splines = len(self.knot_locations) - 2
-        n_data = len(x)
-        design_mat = np.zeros((n_data, n_splines))
-
-        for i in range(design_mat.shape[1]):
-            ith_spline = BSpline.basis_element(basis_gridpoints[i : i + 4])
-            ith_col = ith_spline(x).T
-            design_mat[:, i] = ith_col
-        return design_mat
+        self.knotpoints = np.zeros(len(knot_locations) + 2)
+        self.knotpoints[0] = a
+        self.knotpoints[-1] = b
+        self.knotpoints[1:-1] = knot_locations
 
     def fit(self, data_x, data_y):
         """Take x, y datapoints, and return a callable model object.
@@ -84,16 +56,19 @@ class ModelConfig:
         called to evaluate the posterior data distribition, given this
         current knot configuration.
         """
-        design_matrix = self._design_matrix(data_x)
-        basis_gridpoints = self._get_gridpoints()  # Knot points + endpoints
+        n_splines = len(self.knotpoints) - 4
+        splines, cols = [], []
+        # Build design matrix
+        for i in range(n_splines):
+            ith_spline = BSpline.basis_element(self.knotpoints[i:i+4])
+            splines.append(ith_spline)  # Also store each spline for later
+            cols.append(ith_spline(data_x))
+        design_matrix = np.array(cols).T
         betas = (
             len(data_x)
             / (len(data_x) + 1)
             * np.linalg.lstsq(design_matrix, data_y, rcond=None)[0]
         )
-        splines = []
-        for i in range(design_matrix.shape[1]):
-            splines.append(BSpline.basis_element(basis_gridpoints[i : i + 4]))
         return Model(betas, splines)
 
 
