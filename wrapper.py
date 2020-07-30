@@ -2,7 +2,7 @@ import numpy as np
 import datetime
 import subprocess
 import os
-from scipy.interpolate import BSpline
+import scipy.interpolate
 
 BARS_EXECUTABLE = "./BarsNWrapper/barsN.out"
 
@@ -37,6 +37,7 @@ class ModelConfig:
     callable model object from the config, when provided with training
     data.
     """
+
     def __init__(self, knot_locations, a, b):
         self.knotpoints = np.zeros(len(knot_locations) + 2)
         self.knotpoints[0] = a
@@ -52,45 +53,15 @@ class ModelConfig:
             data_y: 1d np array
                 y data to fit the model to
 
-        Performs no checking! Returns a Model object, that can be
+        Performs no checking! Returns a model function, that can be
         called to evaluate the posterior data distribition, given this
         current knot configuration.
         """
-        n_splines = len(self.knotpoints) - 4
-        splines, cols = [], []
-        # Build design matrix
-        for i in range(n_splines):
-            ith_spline = BSpline.basis_element(self.knotpoints[i:i+4])
-            splines.append(ith_spline)  # Also store each spline for later
-            cols.append(ith_spline(data_x))
-        design_matrix = np.array(cols).T
-        betas = (
-            len(data_x)
-            / (len(data_x) + 1)
-            * np.linalg.lstsq(design_matrix, data_y, rcond=None)[0]
+        sort_indices = np.argsort(data_x)
+        spline_representation = scipy.interpolate.splrep(
+            data_x[sort_indices], data_y[sort_indices], t=np.sort(self.knotpoints[1:-1])
         )
-        return Model(betas, splines)
-
-
-class Model:
-    """Simple callable B-Spline model"""
-
-    def __init__(self, betas, spline_funcs):
-        """To be called by ModelConfig.fit. betas are the BSpline
-        coefficients, and spline_funcs are the BSPline functions."""
-        self.betas = betas
-        self.splines = spline_funcs
-
-    def __call__(self, xs):
-        """Evaluate the posterior distribution p(y | knots, x), at
-        some x datapoints.
-
-            xs: np array
-                1d array of datapoints at which to evaluate the
-                posterior distribution.
-
-        Returns a np array of p(y | knots, x). """
-        return np.dot(self.betas, np.array([b(xs) for b in self.splines]))
+        return lambda x: scipy.interpolate.splev(x, spline_representation)
 
 
 class ModelSet:
@@ -99,6 +70,7 @@ class ModelSet:
     the easy estimation of p(y | x), by averaging (mean, median) over
     the sets of samples p(y | knots, x) for each sampled knot set.
     """
+
     def __init__(self, model_list):
         self.models = model_list
 
