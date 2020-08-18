@@ -3,6 +3,7 @@ import datetime
 import subprocess
 import os
 import scipy.interpolate
+import warnings
 
 BARS_EXECUTABLE = "./BarsNWrapper/barsN.out"
 
@@ -38,11 +39,8 @@ class ModelConfig:
     data.
     """
 
-    def __init__(self, knot_locations, a, b):
-        self.knotpoints = np.zeros(len(knot_locations) + 2)
-        self.knotpoints[0] = a
-        self.knotpoints[-1] = b
-        self.knotpoints[1:-1] = knot_locations
+    def __init__(self, knot_locations):
+        self.knotpoints = knot_locations
 
     def fit(self, data_x, data_y):
         """Take x, y datapoints, and return a callable model object.
@@ -59,7 +57,7 @@ class ModelConfig:
         """
         sort_indices = np.argsort(data_x)
         spline_representation = scipy.interpolate.splrep(
-            data_x[sort_indices], data_y[sort_indices], t=np.sort(self.knotpoints[1:-1])
+            data_x[sort_indices], data_y[sort_indices], t=np.sort(self.knotpoints)
         )
         return lambda x: scipy.interpolate.splev(x, spline_representation)
 
@@ -117,9 +115,12 @@ def _parse_knot_file(filename):
 
 
 def _build_model(knotlist, data_x, data_y):
-    a = np.min(data_x)
-    b = np.max(data_x)
-    model_list = [ModelConfig(k, a, b).fit(data_x, data_y) for k in knotlist]
+    model_list = []
+    for k in knotlist:
+        try:
+            model_list.append(ModelConfig(k).fit(data_x, data_y))
+        except ValueError:
+            warnings.warn("BARS returned a set of FITPACK-incompatible knots")
     return ModelSet(model_list)
 
 
