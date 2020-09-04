@@ -6,10 +6,16 @@ with S and R wrappers." Journal of Statistical Software 26.1 (2008):
 1.
 
 To use the software, follow the instructions in INSTRUCTIONS, to
-compile a barsN executable. Put this executable in the current working
-directory. The python wrapper will then provide an interface for
-running it. The python wrapper is referred to as wrapper.py, and
-should be placed in the same directory as the BarsN executable.
+compile a barsN executable. This is usually just a case of
+
+    >>> make barsN.out
+
+Put the python wrapper (wrapper.py) in the current working directory.
+It will then provide an interface for running the executable. Note
+that the wrapper hard-codes where the executable is to be found. When
+the executable is placed elsewhere relative to the wrapper, this path
+must changed, or else the code will not work. Changing the executable
+path is done easily by modifying line 8 of wrapper.py
 
 The wrapper is used by calling
 
